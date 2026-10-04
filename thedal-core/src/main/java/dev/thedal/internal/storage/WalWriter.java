@@ -8,6 +8,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
@@ -159,6 +160,36 @@ public final class WalWriter implements Closeable {
     lock.lock();
     try {
       return fsyncNanos;
+    } finally {
+      lock.unlock();
+    }
+  }
+
+  /**
+   * Deletes closed segments whose records all have LSN {@code <= coveredLsn}: segment i qualifies
+   * when segment i+1 starts at or before {@code coveredLsn + 1}. The active segment is never
+   * deleted.
+   *
+   * @return number of segments deleted
+   */
+  public int pruneSegmentsUpTo(long coveredLsn) {
+    lock.lock();
+    try {
+      List<Path> segments = Wal.segments(dir);
+      int deleted = 0;
+      for (int i = 0; i + 1 < segments.size(); i++) {
+        if (Wal.firstLsn(segments.get(i + 1)) > coveredLsn + 1) {
+          break;
+        }
+        Files.delete(segments.get(i));
+        deleted++;
+      }
+      if (deleted > 0) {
+        Wal.fsyncDirectory(dir);
+      }
+      return deleted;
+    } catch (IOException e) {
+      throw new UncheckedIOException("pruning WAL segments in " + dir, e);
     } finally {
       lock.unlock();
     }
