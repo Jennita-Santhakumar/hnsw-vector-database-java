@@ -51,6 +51,11 @@ final class BoundedMaxHeap {
     return true;
   }
 
+  /** Whether {@link #offer} would keep this entry, without adding it. */
+  boolean accepts(int ord, float dist) {
+    return size < capacity || worse(dists[0], ords[0], dist, ord);
+  }
+
   int size() {
     return size;
   }

@@ -33,7 +33,7 @@ public final class IdMap {
    *     is already bound to another id
    */
   public int bind(String id, int ord) {
-    validateId(id);
+    requireValidId(id);
     if (ord < 0) {
       throw new IllegalArgumentException("ordinal must be non-negative: " + ord);
     }
@@ -82,7 +82,12 @@ public final class IdMap {
     return ordById.size();
   }
 
-  private static void validateId(String id) {
+  /**
+   * Checks an id without binding it, so callers can validate before mutating other state.
+   *
+   * @throws IllegalArgumentException if the id is null, empty or longer than {@link #MAX_ID_LENGTH}
+   */
+  public static void requireValidId(String id) {
     if (id == null || id.isEmpty()) {
       throw new IllegalArgumentException("id must be a non-empty string");
     }

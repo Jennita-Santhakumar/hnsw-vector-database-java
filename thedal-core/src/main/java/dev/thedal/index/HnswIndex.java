@@ -85,7 +85,7 @@ public final class HnswIndex implements Index {
     int[] entryPoints = {ep};
     for (int layer = Math.min(level, maxLevel); layer >= 0; layer--) {
       SearchResult found =
-          searchLayer(vector, entryPoints, entryPoints.length, params.efConstruction(), layer)
+          searchLayer(vector, entryPoints, entryPoints.length, params.efConstruction(), layer, null)
               .drainSorted();
       int[] candidates = found.ords();
       int[] neighbours = selectNeighbours(found, params.m());
@@ -108,8 +108,9 @@ public final class HnswIndex implements Index {
    * K-nearest-neighbour search (Algorithm 5): greedy descent through the upper layers, then a
    * best-first search of layer 0 with ef = max(efSearch or the per-query override, k).
    *
-   * <p>{@code allowed} is applied to the ef candidates found; with a restrictive filter this can
-   * return fewer than k hits.
+   * <p>Nodes rejected by {@code allowed} (deleted or filtered out) are still traversed, since they
+   * may be the only path to good nodes, but never enter the ef result list. The search therefore
+   * keeps going until it has ef eligible nodes or runs out of graph.
    *
    * <p>Safe to call from many threads at once while no insert runs: working memory is per thread,
    * and the only allocation is the returned result.
@@ -134,29 +135,12 @@ public final class HnswIndex implements Index {
     }
     SearchScratch s = scratch.get();
     s.singleEntryPoint[0] = ep;
-    BoundedMaxHeap found = searchLayer(query, s.singleEntryPoint, 1, ef, 0);
+    BoundedMaxHeap found = searchLayer(query, s.singleEntryPoint, 1, ef, 0, allowed);
     s.ensureSortedCapacity(found.size());
-    int foundCount = found.drainSortedInto(s.sortedOrds, s.sortedDists);
-
-    // First pass counts eligible hits so the result arrays are allocated at their exact size.
-    int n = 0;
-    for (int i = 0; i < foundCount && n < k; i++) {
-      if (allowed == null || allowed.test(s.sortedOrds[i])) {
-        n++;
-      }
-    }
-    int[] ords = new int[n];
-    float[] dists = new float[n];
-    int written = 0;
-    for (int i = 0; i < foundCount && written < n; i++) {
-      int ord = s.sortedOrds[i];
-      if (allowed == null || allowed.test(ord)) {
-        ords[written] = ord;
-        dists[written] = s.sortedDists[i];
-        written++;
-      }
-    }
-    return n == 0 ? SearchResult.empty() : new SearchResult(ords, dists);
+    int n = Math.min(k, found.drainSortedInto(s.sortedOrds, s.sortedDists));
+    return n == 0
+        ? SearchResult.empty()
+        : new SearchResult(Arrays.copyOf(s.sortedOrds, n), Arrays.copyOf(s.sortedDists, n));
   }
 
   /** Estimated bytes of the graph: neighbour arrays plus per-node bookkeeping. */
@@ -198,11 +182,14 @@ public final class HnswIndex implements Index {
 
   /**
    * Algorithm 2: best-first search of one layer from the first {@code entryCount} entry points,
-   * returning the ef closest nodes found. The returned heap is this thread's scratch heap: drain it
-   * before the next searchLayer call on the same thread.
+   * returning the ef closest eligible nodes found. Ineligible nodes are expanded like any other but
+   * never kept, as hnswlib does for deleted nodes. The returned heap is this thread's scratch heap:
+   * drain it before the next searchLayer call on the same thread.
+   *
+   * @param eligible nodes allowed into the result list; {@code null} allows all
    */
   private BoundedMaxHeap searchLayer(
-      float[] query, int[] entryPoints, int entryCount, int ef, int layer) {
+      float[] query, int[] entryPoints, int entryCount, int ef, int layer, IntPredicate eligible) {
     SearchScratch s = scratch.get();
     VisitedSet visited = s.visited;
     visited.reset(count);
@@ -215,7 +202,9 @@ public final class HnswIndex implements Index {
       if (visited.visit(ep)) {
         float d = store.distance(distance, query, ep);
         candidates.push(ep, d);
-        results.offer(ep, d);
+        if (eligible == null || eligible.test(ep)) {
+          results.offer(ep, d);
+        }
       }
     }
     while (!candidates.isEmpty()) {
@@ -232,8 +221,11 @@ public final class HnswIndex implements Index {
           continue;
         }
         float d = store.distance(distance, query, neighbour);
-        if (results.offer(neighbour, d)) {
+        if (results.accepts(neighbour, d)) {
           candidates.push(neighbour, d);
+          if (eligible == null || eligible.test(neighbour)) {
+            results.offer(neighbour, d);
+          }
         }
       }
     }
