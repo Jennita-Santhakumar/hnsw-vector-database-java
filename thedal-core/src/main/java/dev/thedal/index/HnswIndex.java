@@ -28,6 +28,9 @@ public final class HnswIndex implements Index {
   private final double levelMultiplier;
   private final Random random;
 
+  /** Per-thread visited set, heaps and buffers, so searches allocate only their results. */
+  private final ThreadLocal<SearchScratch> scratch = ThreadLocal.withInitial(SearchScratch::new);
+
   private int[] levels = new int[16];
   private int[][][] links = new int[16][][];
   private int count;
@@ -82,7 +85,8 @@ public final class HnswIndex implements Index {
     int[] entryPoints = {ep};
     for (int layer = Math.min(level, maxLevel); layer >= 0; layer--) {
       SearchResult found =
-          searchLayer(vector, entryPoints, params.efConstruction(), layer).drainSorted();
+          searchLayer(vector, entryPoints, entryPoints.length, params.efConstruction(), layer)
+              .drainSorted();
       int[] candidates = found.ords();
       int[] neighbours = selectNeighbours(found, params.m());
       int[] own = links[ord][layer];
@@ -106,6 +110,9 @@ public final class HnswIndex implements Index {
    *
    * <p>{@code allowed} is applied to the ef candidates found; with a restrictive filter this can
    * return fewer than k hits.
+   *
+   * <p>Safe to call from many threads at once while no insert runs: working memory is per thread,
+   * and the only allocation is the returned result.
    */
   @Override
   public SearchResult search(
@@ -125,20 +132,31 @@ public final class HnswIndex implements Index {
     for (int layer = maxLevel; layer > 0; layer--) {
       ep = greedyClosest(query, ep, layer);
     }
-    SearchResult candidates = searchLayer(query, new int[] {ep}, ef, 0).drainSorted();
+    SearchScratch s = scratch.get();
+    s.singleEntryPoint[0] = ep;
+    BoundedMaxHeap found = searchLayer(query, s.singleEntryPoint, 1, ef, 0);
+    s.ensureSortedCapacity(found.size());
+    int foundCount = found.drainSortedInto(s.sortedOrds, s.sortedDists);
 
-    int[] ords = new int[Math.min(k, candidates.size())];
-    float[] dists = new float[ords.length];
+    // First pass counts eligible hits so the result arrays are allocated at their exact size.
     int n = 0;
-    for (int i = 0; i < candidates.size() && n < ords.length; i++) {
-      int ord = candidates.ord(i);
-      if (allowed == null || allowed.test(ord)) {
-        ords[n] = ord;
-        dists[n] = candidates.distance(i);
+    for (int i = 0; i < foundCount && n < k; i++) {
+      if (allowed == null || allowed.test(s.sortedOrds[i])) {
         n++;
       }
     }
-    return new SearchResult(Arrays.copyOf(ords, n), Arrays.copyOf(dists, n));
+    int[] ords = new int[n];
+    float[] dists = new float[n];
+    int written = 0;
+    for (int i = 0; i < foundCount && written < n; i++) {
+      int ord = s.sortedOrds[i];
+      if (allowed == null || allowed.test(ord)) {
+        ords[written] = ord;
+        dists[written] = s.sortedDists[i];
+        written++;
+      }
+    }
+    return n == 0 ? SearchResult.empty() : new SearchResult(ords, dists);
   }
 
   /** Estimated bytes of the graph: neighbour arrays plus per-node bookkeeping. */
@@ -178,14 +196,23 @@ public final class HnswIndex implements Index {
     return Arrays.copyOfRange(list, 1, 1 + list[0]);
   }
 
-  /** Algorithm 2: best-first search of one layer, returning the ef closest nodes found. */
-  private BoundedMaxHeap searchLayer(float[] query, int[] entryPoints, int ef, int layer) {
-    boolean[] visited = new boolean[count];
-    MinHeap candidates = new MinHeap(ef);
-    BoundedMaxHeap results = new BoundedMaxHeap(ef);
-    for (int ep : entryPoints) {
-      if (!visited[ep]) {
-        visited[ep] = true;
+  /**
+   * Algorithm 2: best-first search of one layer from the first {@code entryCount} entry points,
+   * returning the ef closest nodes found. The returned heap is this thread's scratch heap: drain it
+   * before the next searchLayer call on the same thread.
+   */
+  private BoundedMaxHeap searchLayer(
+      float[] query, int[] entryPoints, int entryCount, int ef, int layer) {
+    SearchScratch s = scratch.get();
+    VisitedSet visited = s.visited;
+    visited.reset(count);
+    MinHeap candidates = s.candidates;
+    candidates.clear();
+    BoundedMaxHeap results = s.results;
+    results.reset(ef);
+    for (int i = 0; i < entryCount; i++) {
+      int ep = entryPoints[i];
+      if (visited.visit(ep)) {
         float d = store.distance(distance, query, ep);
         candidates.push(ep, d);
         results.offer(ep, d);
@@ -201,10 +228,9 @@ public final class HnswIndex implements Index {
       int[] list = links[current][layer];
       for (int i = 1; i <= list[0]; i++) {
         int neighbour = list[i];
-        if (visited[neighbour]) {
+        if (!visited.visit(neighbour)) {
           continue;
         }
-        visited[neighbour] = true;
         float d = store.distance(distance, query, neighbour);
         if (results.offer(neighbour, d)) {
           candidates.push(neighbour, d);

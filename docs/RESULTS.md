@@ -18,3 +18,7 @@ Notes on task 1.5: the heuristic's gain is large on clustered data (missed neigh
 from 8.3% to 2.3%) and small on uniform L2 data. On uniform data with DOT and COSINE it was slightly
 *lower* than simple selection (0.9645 vs 0.9695, 0.9480 vs 0.9605). Real embeddings are clustered,
 so the heuristic stays the default.
+
+| Date | Metric | Value | Conditions (hardware, dataset/split, settings) | How measured (script/command) |
+|---|---|---|---|---|
+| 2026-10-04 | HNSW heap allocation per search (task 1.6) | 136 bytes/query | laptop-5800H; 10k vectors dim 16, k=10, efSearch=64, after JIT warm-up, 500 queries | `HnswSearchTest.searchAllocatesOnlyItsResult` (HotSpot `ThreadMXBean.getThreadAllocatedBytes`) |
