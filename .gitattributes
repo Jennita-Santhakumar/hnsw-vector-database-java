@@ -1,1 +1,4 @@
 * text=auto eol=lf
+# Windows batch files break with LF endings.
+*.bat text eol=crlf
+*.jar binary
