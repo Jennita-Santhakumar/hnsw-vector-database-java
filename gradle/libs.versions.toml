@@ -9,6 +9,7 @@ spotless-plugin = "8.10.3"
 google-java-format = "1.36.1"
 spotbugs-plugin = "6.5.12"
 spotbugs = "4.10.4"
+jacoco = "0.8.15"
 
 [libraries]
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }

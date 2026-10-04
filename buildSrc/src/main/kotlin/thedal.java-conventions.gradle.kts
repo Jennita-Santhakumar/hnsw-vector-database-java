@@ -8,6 +8,7 @@ import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 
 plugins {
   java
+  jacoco
   id("com.diffplug.spotless")
   id("com.github.spotbugs")
 }
@@ -43,6 +44,17 @@ tasks.withType<Test>().configureEach {
   testLogging {
     events("failed", "skipped")
     exceptionFormat = TestExceptionFormat.FULL
+  }
+}
+
+jacoco { toolVersion = version("jacoco") }
+
+tasks.named<Test>("test") { finalizedBy(tasks.named("jacocoTestReport")) }
+
+tasks.named<JacocoReport>("jacocoTestReport") {
+  reports {
+    xml.required = true
+    html.required = true
   }
 }
 
