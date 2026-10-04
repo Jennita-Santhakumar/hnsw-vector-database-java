@@ -5,7 +5,7 @@ Learn as you build: before each HNSW task, read the matching section of the HNSW
 
 ## Phase 0 — Foundation
 - [x] 0.1 Gradle multi-module skeleton (core, server, bench), Java 21 toolchain, Spotless, SpotBugs, JUnit 5/AssertJ/jqwik; Makefile; `.gitignore` (datasets, data dirs).
-- [ ] 0.2 CI: build, Spotless check, tests, gitleaks, Docker build; cache Gradle.
+- [x] 0.2 CI: build, Spotless check, tests, gitleaks, Docker build; cache Gradle.
 
 ## Phase 1 — Correct in-memory engine
 - [ ] 1.1 `Distance` implementations (L2, dot, cosine-normalized) + tests incl. edge cases (zero vector, dimension mismatch).
