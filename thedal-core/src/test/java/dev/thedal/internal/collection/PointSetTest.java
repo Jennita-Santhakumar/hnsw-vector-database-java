@@ -8,9 +8,8 @@ import dev.thedal.distance.Metric;
 import dev.thedal.index.FlatIndex;
 import dev.thedal.index.HnswIndex;
 import dev.thedal.index.HnswParams;
-import dev.thedal.index.Index;
+import dev.thedal.index.IndexProvider;
 import dev.thedal.index.SearchParams;
-import dev.thedal.internal.store.VectorStore;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -19,7 +18,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
-import java.util.function.BiFunction;
 import net.jqwik.api.ForAll;
 import net.jqwik.api.Property;
 import net.jqwik.api.constraints.IntRange;
@@ -27,9 +25,8 @@ import org.junit.jupiter.api.Test;
 
 class PointSetTest {
 
-  static final BiFunction<VectorStore, Metric, Index> FLAT =
-      (store, metric) -> new FlatIndex(store, metric.distance());
-  static final BiFunction<VectorStore, Metric, Index> HNSW =
+  static final IndexProvider FLAT = (store, metric) -> new FlatIndex(store, metric.distance());
+  static final IndexProvider HNSW =
       (store, metric) -> new HnswIndex(store, metric.distance(), HnswParams.defaults());
 
   static float[] gaussian(Random rnd, int dim) {

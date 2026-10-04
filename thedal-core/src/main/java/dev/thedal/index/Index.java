@@ -1,5 +1,7 @@
 package dev.thedal.index;
 
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.util.function.IntPredicate;
 
 /**
@@ -28,4 +30,7 @@ public interface Index {
   default int defaultEf() {
     return 0;
   }
+
+  /** Writes the index structure for a snapshot's graph file. */
+  void writeTo(DataOutputStream out) throws IOException;
 }

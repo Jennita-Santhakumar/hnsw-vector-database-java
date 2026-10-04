@@ -5,15 +5,17 @@ import dev.thedal.filter.Filter;
 import dev.thedal.index.FlatIndex;
 import dev.thedal.index.HnswIndex;
 import dev.thedal.index.Index;
+import dev.thedal.index.IndexProvider;
 import dev.thedal.index.SearchParams;
 import dev.thedal.internal.collection.PointSet;
 import dev.thedal.internal.store.VectorStore;
+import java.io.DataInputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.function.BiFunction;
 
 /**
  * A named set of points with one dimension, metric and index.
@@ -176,10 +178,24 @@ public final class Collection {
     }
   }
 
-  private static BiFunction<VectorStore, Metric, Index> indexFactory(CollectionConfig config) {
-    return switch (config.indexType()) {
-      case FLAT -> (store, metric) -> new FlatIndex(store, metric.distance());
-      case HNSW -> (store, metric) -> new HnswIndex(store, metric.distance(), config.hnsw());
+  /** Creates and restores the index type configured for a collection. */
+  static IndexProvider indexFactory(CollectionConfig config) {
+    return new IndexProvider() {
+      @Override
+      public Index create(VectorStore store, Metric metric) {
+        return switch (config.indexType()) {
+          case FLAT -> new FlatIndex(store, metric.distance());
+          case HNSW -> new HnswIndex(store, metric.distance(), config.hnsw());
+        };
+      }
+
+      @Override
+      public Index read(VectorStore store, Metric metric, DataInputStream in) throws IOException {
+        return switch (config.indexType()) {
+          case FLAT -> FlatIndex.read(store, metric.distance(), in);
+          case HNSW -> HnswIndex.read(store, metric.distance(), config.hnsw(), in);
+        };
+      }
     };
   }
 }

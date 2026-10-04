@@ -3,6 +3,9 @@ package dev.thedal.index;
 import dev.thedal.distance.Distance;
 import dev.thedal.internal.store.VectorStore;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.util.function.IntPredicate;
 
 /**
@@ -68,5 +71,23 @@ public final class FlatIndex implements Index {
   /** Number of registered ordinals. */
   public int size() {
     return count;
+  }
+
+  /** Writes the ordinal count; the vectors themselves are in the store's snapshot file. */
+  @Override
+  public void writeTo(DataOutputStream out) throws IOException {
+    out.writeInt(count);
+  }
+
+  /** Restores a flat index written by {@link #writeTo} over a restored store. */
+  public static FlatIndex read(VectorStore store, Distance distance, DataInputStream in)
+      throws IOException {
+    int count = in.readInt();
+    if (count != store.size()) {
+      throw new IOException("flat index has " + count + " ordinals, store has " + store.size());
+    }
+    FlatIndex index = new FlatIndex(store, distance);
+    index.count = count;
+    return index;
   }
 }

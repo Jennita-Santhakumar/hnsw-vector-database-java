@@ -5,15 +5,20 @@ import dev.thedal.filter.Filter;
 import dev.thedal.filter.Metadata;
 import dev.thedal.index.ExactSearch;
 import dev.thedal.index.Index;
+import dev.thedal.index.IndexProvider;
 import dev.thedal.index.SearchParams;
 import dev.thedal.index.SearchResult;
+import dev.thedal.internal.storage.MetadataJson;
+import dev.thedal.internal.storage.SnapshotCorruptedException;
+import dev.thedal.internal.storage.SnapshotIo;
 import dev.thedal.internal.store.IdMap;
 import dev.thedal.internal.store.VectorStore;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.function.BiFunction;
 import java.util.function.IntPredicate;
 import org.roaringbitmap.RoaringBitmap;
 
@@ -91,7 +96,7 @@ public final class PointSet {
 
   private final int dim;
   private final Metric metric;
-  private final BiFunction<VectorStore, Metric, Index> indexFactory;
+  private final IndexProvider indexFactory;
   private final FilterConfig filterConfig;
 
   private VectorStore store;
@@ -105,24 +110,146 @@ public final class PointSet {
    *
    * @param indexFactory builds an index over a store; called again on every compaction
    */
-  public PointSet(int dim, Metric metric, BiFunction<VectorStore, Metric, Index> indexFactory) {
+  public PointSet(int dim, Metric metric, IndexProvider indexFactory) {
     this(dim, metric, indexFactory, FilterConfig.DEFAULT);
   }
 
   /** Creates an empty point set. */
-  public PointSet(
-      int dim,
-      Metric metric,
-      BiFunction<VectorStore, Metric, Index> indexFactory,
-      FilterConfig filterConfig) {
+  public PointSet(int dim, Metric metric, IndexProvider indexFactory, FilterConfig filterConfig) {
     this.dim = dim;
     this.metric = metric;
     this.indexFactory = indexFactory;
     this.filterConfig = filterConfig;
     this.store = new VectorStore(dim);
     this.ids = new IdMap();
-    this.index = indexFactory.apply(store, metric);
+    this.index = indexFactory.create(store, metric);
     this.tombstones = new RoaringBitmap();
+  }
+
+  /**
+   * Writes the snapshot data files into {@code dir}: {@code vectors.bin}, {@code ids.bin}, {@code
+   * metadata.bin}, {@code tombstones.bin} and {@code graph.bin}, each with a CRC32 footer and
+   * fsynced. All stored ordinals are written, tombstoned ones included, because the graph still
+   * links through them.
+   */
+  public void writeParts(Path dir) {
+    int n = store.size();
+    SnapshotIo.writeFile(
+        dir.resolve("vectors.bin"),
+        out -> {
+          out.writeInt(dim);
+          out.writeInt(n);
+          for (int ord = 0; ord < n; ord++) {
+            float[] segment = store.segment(ord);
+            int offset = store.offset(ord);
+            for (int i = 0; i < dim; i++) {
+              out.writeFloat(segment[offset + i]);
+            }
+          }
+        });
+    SnapshotIo.writeFile(
+        dir.resolve("ids.bin"),
+        out -> {
+          out.writeInt(n);
+          for (int ord = 0; ord < n; ord++) {
+            String id = ids.idOf(ord);
+            out.writeBoolean(id != null);
+            if (id != null) {
+              out.writeUTF(id);
+            }
+          }
+        });
+    SnapshotIo.writeFile(
+        dir.resolve("metadata.bin"),
+        out -> {
+          out.writeInt(n);
+          for (int ord = 0; ord < n; ord++) {
+            Map<String, Object> fields = metadata.get(ord);
+            byte[] json = fields.isEmpty() ? new byte[0] : MetadataJson.write(fields);
+            out.writeInt(json.length);
+            out.write(json);
+          }
+        });
+    SnapshotIo.writeFile(dir.resolve("tombstones.bin"), tombstones::serialize);
+    SnapshotIo.writeFile(dir.resolve("graph.bin"), index::writeTo);
+  }
+
+  /**
+   * Restores a point set from files written by {@link #writeParts}.
+   *
+   * @throws SnapshotCorruptedException if any file fails validation or files disagree
+   */
+  public static PointSet readParts(
+      Path dir, int dim, Metric metric, IndexProvider provider, FilterConfig filterConfig) {
+    PointSet points = new PointSet(dim, metric, provider, filterConfig);
+    VectorStore store = points.store;
+    int n =
+        SnapshotIo.readFile(
+            dir.resolve("vectors.bin"),
+            in -> {
+              int fileDim = in.readInt();
+              if (fileDim != dim) {
+                throw new IOException("vectors have dim " + fileDim + ", expected " + dim);
+              }
+              int count = in.readInt();
+              float[] vector = new float[dim];
+              for (int ord = 0; ord < count; ord++) {
+                for (int i = 0; i < dim; i++) {
+                  vector[i] = in.readFloat();
+                }
+                store.add(vector);
+              }
+              return count;
+            });
+    SnapshotIo.readFile(
+        dir.resolve("ids.bin"),
+        in -> {
+          requireCount(in.readInt(), n, "ids");
+          for (int ord = 0; ord < n; ord++) {
+            if (in.readBoolean()) {
+              points.ids.bind(in.readUTF(), ord);
+            }
+          }
+          return null;
+        });
+    SnapshotIo.readFile(
+        dir.resolve("metadata.bin"),
+        in -> {
+          requireCount(in.readInt(), n, "metadata");
+          for (int ord = 0; ord < n; ord++) {
+            byte[] json = new byte[in.readInt()];
+            in.readFully(json);
+            if (json.length > 0) {
+              points.metadata.put(ord, MetadataJson.read(json));
+            }
+          }
+          return null;
+        });
+    points.tombstones =
+        SnapshotIo.readFile(
+            dir.resolve("tombstones.bin"),
+            in -> {
+              RoaringBitmap bitmap = new RoaringBitmap();
+              bitmap.deserialize(in);
+              return bitmap;
+            });
+    points.index =
+        SnapshotIo.readFile(dir.resolve("graph.bin"), in -> provider.read(store, metric, in));
+    for (int ord = 0; ord < n; ord++) {
+      boolean dead = points.tombstones.contains(ord);
+      if (dead == (points.ids.idOf(ord) != null)) {
+        throw new SnapshotCorruptedException(
+            "ordinal " + ord + " is " + (dead ? "tombstoned but has an id" : "live without an id"),
+            null);
+      }
+    }
+    return points;
+  }
+
+  private static void requireCount(int found, int expected, String file) throws IOException {
+    if (found != expected) {
+      throw new IOException(file + " has " + found + " entries, vectors have " + expected);
+    }
   }
 
   /** Inserts or replaces {@code id} with no metadata. See {@link #upsert(String, float[], Map)}. */
@@ -260,7 +387,7 @@ public final class PointSet {
   public int[] compact() {
     VectorStore newStore = new VectorStore(dim);
     IdMap newIds = new IdMap();
-    Index newIndex = indexFactory.apply(newStore, metric);
+    Index newIndex = indexFactory.create(newStore, metric);
     int[] remap = new int[store.size()];
     Arrays.fill(remap, -1);
     for (int ord = 0; ord < store.size(); ord++) {

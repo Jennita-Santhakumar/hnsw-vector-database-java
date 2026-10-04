@@ -3,6 +3,9 @@ package dev.thedal.index;
 import dev.thedal.distance.Distance;
 import dev.thedal.internal.store.VectorStore;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.Random;
 import java.util.function.IntPredicate;
@@ -152,6 +155,78 @@ public final class HnswIndex implements Index {
   @Override
   public int defaultEf() {
     return params.efSearch();
+  }
+
+  /**
+   * Writes the graph: {@code count, entryPoint, maxLevel}, then per node its level and, per layer,
+   * the neighbour count followed by the neighbour ordinals.
+   */
+  @Override
+  public void writeTo(DataOutputStream out) throws IOException {
+    out.writeInt(count);
+    out.writeInt(entryPoint);
+    out.writeInt(maxLevel);
+    for (int ord = 0; ord < count; ord++) {
+      out.writeInt(levels[ord]);
+      for (int layer = 0; layer <= levels[ord]; layer++) {
+        int[] list = links[ord][layer];
+        for (int i = 0; i <= list[0]; i++) {
+          out.writeInt(list[i]);
+        }
+      }
+    }
+  }
+
+  /**
+   * Restores a graph written by {@link #writeTo} over a restored store. The level RNG is advanced
+   * by one draw per node, exactly as the original inserts did, so later inserts build the same
+   * graph as if the process had never restarted.
+   *
+   * @throws IOException if the graph is malformed or does not match the store
+   */
+  public static HnswIndex read(
+      VectorStore store, Distance distance, HnswParams params, DataInputStream in)
+      throws IOException {
+    HnswIndex index = new HnswIndex(store, distance, params);
+    int count = in.readInt();
+    if (count != store.size()) {
+      throw new IOException("graph has " + count + " nodes, store has " + store.size());
+    }
+    int entryPoint = in.readInt();
+    int maxLevel = in.readInt();
+    for (int ord = 0; ord < count; ord++) {
+      int level = in.readInt();
+      if (level < 0 || level > 64) {
+        throw new IOException("node " + ord + " has invalid level " + level);
+      }
+      index.allocateNode(ord, level);
+      for (int layer = 0; layer <= level; layer++) {
+        int[] list = index.links[ord][layer];
+        int n = in.readInt();
+        if (n < 0 || n > list.length - 1) {
+          throw new IOException("node " + ord + " layer " + layer + " has " + n + " links");
+        }
+        list[0] = n;
+        for (int i = 1; i <= n; i++) {
+          int neighbour = in.readInt();
+          if (neighbour < 0 || neighbour >= count) {
+            throw new IOException("node " + ord + " links to missing node " + neighbour);
+          }
+          list[i] = neighbour;
+        }
+      }
+      randomLevel(index.random, index.levelMultiplier); // replay the insert's level draw
+    }
+    boolean empty = count == 0;
+    if (empty
+        ? entryPoint != -1 || maxLevel != -1
+        : entryPoint < 0 || entryPoint >= count || index.levels[entryPoint] != maxLevel) {
+      throw new IOException("invalid entry point " + entryPoint + " / max level " + maxLevel);
+    }
+    index.count = count;
+    index.entryPoint = entryPoint;
+    index.maxLevel = maxLevel;
+    return index;
   }
 
   /** Number of nodes in the graph. */

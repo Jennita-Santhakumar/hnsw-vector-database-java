@@ -1,12 +1,9 @@
 package dev.thedal.internal.storage;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.thedal.collection.CollectionConfig;
 import dev.thedal.collection.IndexType;
 import dev.thedal.distance.Metric;
-import dev.thedal.filter.Metadata;
 import dev.thedal.index.HnswParams;
 import dev.thedal.index.NeighborSelection;
 import java.io.ByteArrayInputStream;
@@ -70,7 +67,7 @@ public sealed interface WalEntry {
             for (float x : vector) {
               out.writeFloat(x);
             }
-            byte[] json = Json.MAPPER.writeValueAsBytes(metadata);
+            byte[] json = MetadataJson.write(metadata);
             out.writeInt(json.length);
             out.write(json);
           });
@@ -145,8 +142,7 @@ public sealed interface WalEntry {
               }
               byte[] json = new byte[in.readInt()];
               in.readFully(json);
-              Map<String, Object> raw = Json.MAPPER.readValue(json, Json.MAP_TYPE);
-              yield new Upsert(id, vector, Metadata.normalize(raw));
+              yield new Upsert(id, vector, MetadataJson.read(json));
             }
             case OP_DELETE -> new Delete(in.readUTF());
             case OP_CREATE_COLLECTION -> {
@@ -181,11 +177,8 @@ public sealed interface WalEntry {
     void write(DataOutputStream out) throws IOException;
   }
 
-  /** Encoding helpers: shared, thread-safe JSON mapper and a field-writer runner. */
+  /** Runs a field writer into a byte array. */
   final class Json {
-    static final ObjectMapper MAPPER = new ObjectMapper();
-    static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
-
     private Json() {}
 
     static byte[] write(FieldWriter writer) {
