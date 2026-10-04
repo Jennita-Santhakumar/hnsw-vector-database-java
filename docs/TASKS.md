@@ -11,7 +11,7 @@ Learn as you build: before each HNSW task, read the matching section of the HNSW
 - [x] 1.1 `Distance` implementations (L2, dot, cosine-normalized) + tests incl. edge cases (zero vector, dimension mismatch).
 - [x] 1.2 `VectorStore` with contiguous segments + `IdMap` + tests.
 - [x] 1.3 `FlatIndex` (exact top-k with bounded heap) + tests vs naive sort.
-- [ ] 1.4 HNSW: data structures, level generation (seeded), `searchLayer`, insert with simple neighbor selection. Recall test vs FlatIndex on 10k random vectors.
+- [x] 1.4 HNSW: data structures, level generation (seeded), `searchLayer`, insert with simple neighbor selection. Recall test vs FlatIndex on 10k random vectors.
 - [ ] 1.5 HNSW: heuristic neighbor selection (Algorithm 4) + neighbor shrinking; show recall improvement in a test log → RESULTS.md.
 - [ ] 1.6 HNSW search with `efSearch`, reusable visited set, thread-local heaps; jqwik property: recall@10 ≥ 0.9 on random data with default params.
 - [ ] 1.7 Tombstone deletes + compaction rebuild + tests.
