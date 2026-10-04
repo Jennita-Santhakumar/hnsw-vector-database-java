@@ -19,6 +19,12 @@ fun lib(alias: String) = libs.findLibrary(alias).get()
 
 fun version(alias: String) = libs.findVersion(alias).get().requiredVersion
 
+// Opt-in, machine-local: set thedal.buildRoot in ~/.gradle/gradle.properties to keep build output
+// out of synced folders (e.g. OneDrive locks files under build/ while uploading them).
+providers.gradleProperty("thedal.buildRoot").orNull?.let { root ->
+  layout.buildDirectory = file("$root/${project.name}")
+}
+
 group = "dev.thedal"
 
 version = "0.1.0-SNAPSHOT"

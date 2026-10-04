@@ -16,7 +16,7 @@ Learn as you build: before each HNSW task, read the matching section of the HNSW
 - [x] 1.6 HNSW search with `efSearch`, reusable visited set, thread-local heaps; jqwik property: recall@10 ≥ 0.9 on random data with default params.
 - [x] 1.7 Tombstone deletes + compaction rebuild + tests.
 - [x] 1.8 `MetadataStore` + filter parser/evaluator (eq, in, range, and, or) + selectivity-based strategy; property test: flat-filtered result ≡ brute force.
-- [ ] 1.9 `Collection` + `CollectionManager` with read/write locking; concurrent search+write stress test.
+- [x] 1.9 `Collection` + `CollectionManager` with read/write locking; concurrent search+write stress test.
 
 ## Phase 2 — Durability
 - [ ] 2.1 WAL writer/reader with CRC32, LSNs, fsync modes, segment rotation + unit tests (torn tail, corrupt CRC).
