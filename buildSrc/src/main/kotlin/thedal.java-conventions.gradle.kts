@@ -26,6 +26,9 @@ version = "0.1.0-SNAPSHOT"
 java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
 
 dependencies {
+  // Compile-time only: @SuppressFBWarnings with a written justification at the exact site.
+  compileOnly(lib("spotbugs-annotations"))
+  testCompileOnly(lib("spotbugs-annotations"))
   testImplementation(platform(lib("junit-bom")))
   testImplementation(lib("junit-jupiter"))
   testImplementation(lib("assertj-core"))
