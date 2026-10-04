@@ -7,8 +7,10 @@ package dev.thedal.index;
  * @param efConstruction candidate-list size while inserting (higher = better graph, slower build)
  * @param efSearch default candidate-list size while searching (higher = better recall, slower)
  * @param seed RNG seed for level assignment, so the same inserts always build the same graph
+ * @param selection neighbour selection strategy for new links and for shrinking full lists
  */
-public record HnswParams(int m, int efConstruction, int efSearch, long seed) {
+public record HnswParams(
+    int m, int efConstruction, int efSearch, long seed, NeighborSelection selection) {
 
   /** Default M from the paper's recommended range (5-48). */
   public static final int DEFAULT_M = 16;
@@ -33,11 +35,24 @@ public record HnswParams(int m, int efConstruction, int efSearch, long seed) {
     if (efSearch < 1) {
       throw new IllegalArgumentException("efSearch must be >= 1: " + efSearch);
     }
+    if (selection == null) {
+      throw new IllegalArgumentException("selection must not be null");
+    }
   }
 
-  /** The paper's defaults (M=16, efConstruction=200, efSearch=64, seed=42). */
+  /** Parameters with the default {@link NeighborSelection#HEURISTIC} selection. */
+  public HnswParams(int m, int efConstruction, int efSearch, long seed) {
+    this(m, efConstruction, efSearch, seed, NeighborSelection.HEURISTIC);
+  }
+
+  /** The paper's defaults (M=16, efConstruction=200, efSearch=64, heuristic selection, seed=42). */
   public static HnswParams defaults() {
     return new HnswParams(DEFAULT_M, DEFAULT_EF_CONSTRUCTION, DEFAULT_EF_SEARCH, DEFAULT_SEED);
+  }
+
+  /** Copy of these parameters with a different selection strategy. */
+  public HnswParams withSelection(NeighborSelection newSelection) {
+    return new HnswParams(m, efConstruction, efSearch, seed, newSelection);
   }
 
   /** Maximum links per node on layer 0. */

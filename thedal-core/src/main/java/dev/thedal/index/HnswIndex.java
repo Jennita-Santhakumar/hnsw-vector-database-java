@@ -84,7 +84,7 @@ public final class HnswIndex implements Index {
       SearchResult found =
           searchLayer(vector, entryPoints, params.efConstruction(), layer).drainSorted();
       int[] candidates = found.ords();
-      int[] neighbours = Arrays.copyOf(candidates, Math.min(params.m(), candidates.length));
+      int[] neighbours = selectNeighbours(found, params.m());
       int[] own = links[ord][layer];
       System.arraycopy(neighbours, 0, own, 1, neighbours.length);
       own[0] = neighbours.length;
@@ -235,27 +235,56 @@ public final class HnswIndex implements Index {
   }
 
   /**
-   * Adds {@code newNeighbour} to {@code node}'s list on {@code layer}. When the list is full, keeps
-   * the closest neighbours to {@code node} among the old ones plus the new one (simple selection).
+   * Adds {@code newNeighbour} to {@code node}'s list on {@code layer}. When the list is full, it is
+   * shrunk by re-running neighbour selection over the old neighbours plus the new one, measured
+   * from {@code node}.
    */
   private void connect(int node, int newNeighbour, int layer) {
     int[] list = links[node][layer];
     int n = list[0];
-    if (n < list.length - 1) {
+    int capacity = list.length - 1;
+    if (n < capacity) {
       list[n + 1] = newNeighbour;
       list[0] = n + 1;
       return;
     }
-    BoundedMaxHeap keep = new BoundedMaxHeap(list.length - 1);
+    BoundedMaxHeap all = new BoundedMaxHeap(n + 1);
     for (int i = 1; i <= n; i++) {
-      keep.offer(list[i], store.distance(distance, node, list[i]));
+      all.offer(list[i], store.distance(distance, node, list[i]));
     }
-    keep.offer(newNeighbour, store.distance(distance, node, newNeighbour));
-    SearchResult kept = keep.drainSorted();
-    for (int i = 0; i < kept.size(); i++) {
-      list[i + 1] = kept.ord(i);
+    all.offer(newNeighbour, store.distance(distance, node, newNeighbour));
+    int[] kept = selectNeighbours(all.drainSorted(), capacity);
+    System.arraycopy(kept, 0, list, 1, kept.length);
+    list[0] = kept.length;
+  }
+
+  /**
+   * Picks at most {@code max} links from {@code candidates} (sorted closest-first to the base node)
+   * using the configured {@link NeighborSelection}.
+   */
+  private int[] selectNeighbours(SearchResult candidates, int max) {
+    int limit = Math.min(max, candidates.size());
+    if (params.selection() == NeighborSelection.SIMPLE) {
+      return Arrays.copyOf(candidates.ords(), limit);
     }
-    list[0] = kept.size();
+    // Algorithm 4 without candidate extension or re-adding pruned links (as in hnswlib).
+    int[] selected = new int[limit];
+    int n = 0;
+    for (int i = 0; i < candidates.size() && n < limit; i++) {
+      int candidate = candidates.ord(i);
+      float toBase = candidates.distance(i);
+      boolean diverse = true;
+      for (int j = 0; j < n; j++) {
+        if (store.distance(distance, candidate, selected[j]) < toBase) {
+          diverse = false; // an already-kept neighbour covers this direction
+          break;
+        }
+      }
+      if (diverse) {
+        selected[n++] = candidate;
+      }
+    }
+    return Arrays.copyOf(selected, n);
   }
 
   private void allocateNode(int ord, int level) {
