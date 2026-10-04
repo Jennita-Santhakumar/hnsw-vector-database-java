@@ -58,7 +58,7 @@ class PointSetTest {
     assertThat(points.get("a")).isNull();
     assertThat(points.size()).isEqualTo(1);
     assertThat(points.tombstoneCount()).isEqualTo(1);
-    assertThat(ids(points.search(new float[] {1, 2}, 5, SearchParams.DEFAULT, null)))
+    assertThat(ids(points.searchByOrdinal(new float[] {1, 2}, 5, SearchParams.DEFAULT, null)))
         .containsExactly("b");
   }
 
@@ -72,7 +72,8 @@ class PointSetTest {
     assertThat(points.idOf(first)).isNull();
     assertThat(points.size()).isEqualTo(1);
     assertThat(points.tombstoneCount()).isEqualTo(1);
-    List<PointSet.Hit> hits = points.search(new float[] {0, 0}, 5, SearchParams.DEFAULT, null);
+    List<PointSet.Hit> hits =
+        points.searchByOrdinal(new float[] {0, 0}, 5, SearchParams.DEFAULT, null);
     assertThat(hits).hasSize(1);
     assertThat(hits.get(0).distance()).isEqualTo(200f);
   }
@@ -130,8 +131,8 @@ class PointSetTest {
     int queries = 100;
     for (int q = 0; q < queries; q++) {
       float[] query = gaussian(rnd, dim);
-      List<String> got = ids(hnsw.search(query, 10, SearchParams.DEFAULT, null));
-      List<String> truth = ids(exact.search(query, 10, SearchParams.DEFAULT, null));
+      List<String> got = ids(hnsw.searchByOrdinal(query, 10, SearchParams.DEFAULT, null));
+      List<String> truth = ids(exact.searchByOrdinal(query, 10, SearchParams.DEFAULT, null));
       assertThat(got).hasSize(10).doesNotContainAnyElementsOf(deleted);
       hits += got.stream().filter(truth::contains).count();
     }
@@ -182,7 +183,7 @@ class PointSetTest {
     long kept = java.util.Arrays.stream(remap).filter(o -> o >= 0).count();
     assertThat(kept).isEqualTo(live.size());
     live.forEach((id, v) -> assertThat(points.get(id)).containsExactly(v));
-    assertThat(ids(points.search(new float[] {9, 9, 9, 9}, 1, SearchParams.DEFAULT, null)))
+    assertThat(ids(points.searchByOrdinal(new float[] {9, 9, 9, 9}, 1, SearchParams.DEFAULT, null)))
         .containsExactly("p1");
     assertThat(points.memoryBytes()).isPositive();
   }
@@ -195,7 +196,7 @@ class PointSetTest {
     }
     points.delete("p2");
     List<PointSet.Hit> hits =
-        points.search(new float[] {0}, 10, SearchParams.DEFAULT, o -> o % 2 == 0);
+        points.searchByOrdinal(new float[] {0}, 10, SearchParams.DEFAULT, o -> o % 2 == 0);
     assertThat(ids(hits)).containsExactly("p0", "p4");
   }
 
@@ -231,7 +232,7 @@ class PointSetTest {
     List<Float> expected =
         entries.stream().limit(5).map(e -> (float) squaredL2(e.getValue(), query)).toList();
     List<Float> got =
-        points.search(query, 5, SearchParams.DEFAULT, null).stream()
+        points.searchByOrdinal(query, 5, SearchParams.DEFAULT, null).stream()
             .map(PointSet.Hit::distance)
             .toList();
     assertThat(got).hasSameSizeAs(expected);

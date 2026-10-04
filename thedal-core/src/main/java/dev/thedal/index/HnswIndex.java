@@ -149,6 +149,11 @@ public final class HnswIndex implements Index {
     return linkBytes + (long) levels.length * Integer.BYTES + (long) links.length * 8;
   }
 
+  @Override
+  public int defaultEf() {
+    return params.efSearch();
+  }
+
   /** Number of nodes in the graph. */
   public int size() {
     return count;

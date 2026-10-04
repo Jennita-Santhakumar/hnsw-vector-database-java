@@ -23,4 +23,9 @@ public interface Index {
 
   /** Bytes used by the index structure, excluding the vectors in the store. */
   long memoryBytes();
+
+  /** Default candidate-list size used when a query gives no ef; 0 for exact indexes. */
+  default int defaultEf() {
+    return 0;
+  }
 }

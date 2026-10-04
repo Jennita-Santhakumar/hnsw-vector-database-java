@@ -22,3 +22,4 @@ so the heuristic stays the default.
 | Date | Metric | Value | Conditions (hardware, dataset/split, settings) | How measured (script/command) |
 |---|---|---|---|---|
 | 2026-10-04 | HNSW heap allocation per search (task 1.6) | 136 bytes/query | laptop-5800H; 10k vectors dim 16, k=10, efSearch=64, after JIT warm-up, 500 queries | `HnswSearchTest.searchAllocatesOnlyItsResult` (HotSpot `ThreadMXBean.getThreadAllocatedBytes`) |
+| 2026-10-04 | Filtered HNSW recall@10 vs exact filtered answers (task 1.8), selectivity 5% / 10% / 30% / 60% | 1.0000 / 1.0000 / 1.0000 / 0.9980 | laptop-5800H; 10k uniform Gaussian vectors dim 32, numeric range filter, 100 queries; M=16, efC=200, base ef=64 expanded by ceil(1/s), cap 4096; all four via FILTERED_INDEX strategy | `FilteredSearchTest.hnswFilteredRecallAtSeveralSelectivities` |
