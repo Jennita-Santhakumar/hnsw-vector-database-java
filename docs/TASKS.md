@@ -19,7 +19,7 @@ Learn as you build: before each HNSW task, read the matching section of the HNSW
 - [x] 1.9 `Collection` + `CollectionManager` with read/write locking; concurrent search+write stress test.
 
 ## Phase 2 — Durability
-- [ ] 2.1 WAL writer/reader with CRC32, LSNs, fsync modes, segment rotation + unit tests (torn tail, corrupt CRC).
+- [x] 2.1 WAL writer/reader with CRC32, LSNs, fsync modes, segment rotation + unit tests (torn tail, corrupt CRC).
 - [ ] 2.2 Snapshot writer/reader (binary format, magic + version, atomic rename) + round-trip tests.
 - [ ] 2.3 Recovery = snapshot + WAL replay; WAL truncation after snapshot; tests.
 - [ ] 2.4 `make crash-test`: script starts server, streams acknowledged writes, `kill -9` at random times, restarts, verifies every acknowledged id exists. 100 iterations → RESULTS.md.

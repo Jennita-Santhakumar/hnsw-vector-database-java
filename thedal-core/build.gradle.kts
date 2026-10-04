@@ -4,7 +4,10 @@ plugins {
   id("thedal.java-conventions")
 }
 
-dependencies { implementation(libs.roaringbitmap) }
+dependencies {
+  implementation(libs.roaringbitmap)
+  implementation(libs.jackson.databind)
+}
 
 // STANDARDS.md §8: at least 80% coverage on core domain logic. Glue modules are not gated.
 tasks.jacocoTestCoverageVerification {
